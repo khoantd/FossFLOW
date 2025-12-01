@@ -12,10 +12,13 @@ import { StorageManager } from './StorageManager';
 import { DiagramManager } from './components/DiagramManager';
 import { storageManager } from './services/storageService';
 import ChangeLanguage from './components/ChangeLanguage';
+import { AiHelperSidebar } from './components/AiHelperSidebar';
 import { allLocales } from 'fossflow';
 import { useIconPackManager, IconPackName } from './services/iconPackManager';
 import './App.css';
 import { BrowserRouter, Route, Routes, useParams } from 'react-router-dom';
+import { AuthForm } from './components/AuthForm';
+import { useAuth } from './AuthContext';
 
 // Load core isoflow icons (always loaded)
 const coreIcons = flattenCollections([isoflowIsopack]);
@@ -64,6 +67,7 @@ function EditorPage() {
   const [showStorageManager, setShowStorageManager] = useState(false);
   const [showDiagramManager, setShowDiagramManager] = useState(false);
   const [serverStorageAvailable, setServerStorageAvailable] = useState(false);
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
   const isReadonlyUrl =
     window.location.pathname.startsWith('/display/') && readonlyDiagramId;
 
@@ -581,6 +585,7 @@ function EditorPage() {
 
   // i18n
   const { t, i18n } = useTranslation('app');
+  const { user, logout } = useAuth();
 
   // Auto-save functionality
   useEffect(() => {
@@ -758,6 +763,32 @@ function EditorPage() {
           </div>
         )}
         <ChangeLanguage />
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {user ? (
+            <>
+              <span style={{ fontSize: '13px', color: '#333' }}>
+                {t('auth.loggedInAs', { email: user.email })}
+              </span>
+              <button
+                onClick={() => {
+                  void logout();
+                }}
+                style={{ backgroundColor: '#e53935', color: 'white' }}
+              >
+                {t('auth.logout')}
+              </button>
+            </>
+          ) : (
+            <button
+              onClick={() => {
+                setShowAuthDialog(true);
+              }}
+              style={{ backgroundColor: '#4caf50', color: 'white' }}
+            >
+              {t('auth.openDialog')}
+            </button>
+          )}
+        </div>
         <span className="current-diagram">
           {isReadonlyUrl ? (
             <span>
@@ -800,6 +831,12 @@ function EditorPage() {
             }
           }}
         />
+        {!isReadonlyUrl && (
+          <AiHelperSidebar
+            diagramId={currentDiagram?.id}
+            diagramData={currentModel || diagramData}
+          />
+        )}
       </div>
 
       {/* Save Dialog */}
@@ -974,6 +1011,24 @@ function EditorPage() {
             return setShowDiagramManager(false);
           }}
         />
+      )}
+      {/* Auth Dialog */}
+      {showAuthDialog && !user && (
+        <div className="dialog-overlay">
+          <div className="dialog">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+              <h2>{t('auth.title')}</h2>
+              <button
+                onClick={() => {
+                  setShowAuthDialog(false);
+                }}
+              >
+                {t('auth.close')}
+              </button>
+            </div>
+            <AuthForm />
+          </div>
+        </div>
       )}
     </div>
   );
