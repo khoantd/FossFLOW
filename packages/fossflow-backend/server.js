@@ -9,19 +9,25 @@ import { callLightRagQueryStream } from './lightragClient.js';
 import { AUTH_CORS_ORIGIN, AUTH_ENABLED } from './authConfig.js';
 import { createUser, findUserByEmail, validateUserCredentials } from './userStore.js';
 import { clearAuthCookie, setAuthCookie, verifyUserToken } from './authJwt.js';
-
-// Load environment variables
-dotenv.config();
+import { attachUserIfPresent } from './authMiddleware.js';
+import { ENABLE_AI_ASSISTANT } from './aiConfig.js';
+import { runArchitectAssistant } from './aiArchitectAssistantService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load environment variables from the backend package directory
+dotenv.config({ path: path.join(__dirname, '.env') });
 
 const app = express();
 const PORT = process.env.BACKEND_PORT || 3001;
 
 // Configuration from environment variables
 const STORAGE_ENABLED = process.env.ENABLE_SERVER_STORAGE === 'true';
-const STORAGE_PATH = process.env.STORAGE_PATH || '/data/diagrams';
+// Default to project's data/diagrams for local dev, or use env var (e.g., /data/diagrams for Docker)
+const STORAGE_PATH =
+  process.env.STORAGE_PATH ||
+  path.join(__dirname, '..', '..', 'data', 'diagrams');
 const ENABLE_GIT_BACKUP = process.env.ENABLE_GIT_BACKUP === 'true';
 
 // Middleware
@@ -41,6 +47,7 @@ if (corsOptions) {
 }
 app.use(cookieParser());
 app.use(express.json({ limit: '10mb' }));
+app.use(attachUserIfPresent);
 
 // Health check / Storage status endpoint
 app.get('/api/storage/status', (req, res) => {
@@ -252,21 +259,64 @@ app.post('/api/ai/query', async (req, res) => {
         ? error.status
         : 502;
 
-    const message =
-      error.code === 'LIGHTRAG_TIMEOUT'
-        ? 'Upstream LightRAG request timed out'
-        : 'Failed to query AI assistant';
+    let message = 'Failed to query AI assistant';
+    
+    if (error.code === 'LIGHTRAG_TIMEOUT') {
+      message = 'Upstream LightRAG request timed out';
+    } else if (error.status === 401) {
+      message = 'LightRAG authentication failed. Please check your LIGHTRAG_API_KEY in .env';
+    } else if (error.status === 404) {
+      message = 'LightRAG endpoint not found. Please verify LIGHTRAG_BASE_URL and LIGHTRAG_QUERY_STREAM_PATH';
+    }
 
     console.error('[POST /api/ai/query] LightRAG error:', {
       message: error.message,
       code: error.code,
       status: error.status,
-      config: error.config
+      config: error.config,
+      body: error.body
     });
 
     return res.status(status).json({
       error: message,
       details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Orchestrated AI Architecting Assistant endpoint (LiteLLM + LightRAG)
+app.post('/api/ai/architect-assistant', async (req, res) => {
+  if (!ENABLE_AI_ASSISTANT) {
+    return res.status(503).json({
+      error: 'AI assistant is disabled',
+      code: 'AI_DISABLED'
+    });
+  }
+
+  try {
+    const { question, diagramMetadata, sessionId } = req.body ?? {};
+    const result = await runArchitectAssistant({
+      question,
+      diagramMetadata,
+      sessionId
+    });
+    return res.json(result);
+  } catch (error) {
+    // eslint-disable-next-line no-console
+    console.error('[POST /api/ai/architect-assistant] Error:', error);
+
+    const code = error.code || 'AI_INTERNAL_ERROR';
+    const statusCode =
+      code === 'INVALID_REQUEST'
+        ? 400
+        : code === 'AI_DISABLED' || code === 'AI_NOT_CONFIGURED'
+        ? 503
+        : 500;
+
+    return res.status(statusCode).json({
+      error: 'AI assistant request failed',
+      code,
+      message: error.message
     });
   }
 });

@@ -835,6 +835,7 @@ function EditorPage() {
           <AiHelperSidebar
             diagramId={currentDiagram?.id}
             diagramData={currentModel || diagramData}
+            onDiagramUpdate={handleModelUpdated}
           />
         )}
       </div>

@@ -2,6 +2,9 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { DiagramData, buildDiagramContextPayload } from '../diagramUtils';
 import { queryAi } from '../services/aiService';
+import { callAiArchitectAssistant, DiagramModification } from '../services/aiAssistantService';
+import { applyModifications } from '../utils/diagramModificationUtils';
+import { DiagramModificationPreview } from './DiagramModificationPreview';
 import './AiHelperSidebar.css';
 
 type MessageRole = 'user' | 'assistant' | 'system';
@@ -106,6 +109,7 @@ function tryParseLightRagAnswer(raw: string | undefined): ParsedLightRagAnswer |
 interface AiHelperSidebarProps {
   readonly diagramId?: string;
   readonly diagramData: DiagramData;
+  readonly onDiagramUpdate?: (updatedData: DiagramData) => void;
 }
 
 function buildAiContextSummary(context: ReturnType<typeof buildDiagramContextPayload>, diagram: DiagramData): string {
@@ -151,7 +155,7 @@ function buildAiContextSummary(context: ReturnType<typeof buildDiagramContextPay
 }
 
 export function AiHelperSidebar(props: AiHelperSidebarProps) {
-  const { diagramId, diagramData } = props;
+  const { diagramId, diagramData, onDiagramUpdate } = props;
   const { t } = useTranslation('app');
 
   const [isOpen, setIsOpen] = useState<boolean>(false);
@@ -159,6 +163,7 @@ export function AiHelperSidebar(props: AiHelperSidebarProps) {
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
+  const [pendingModifications, setPendingModifications] = useState<DiagramModification[] | null>(null);
 
   const suggestedPrompts = useMemo(
     () => [
@@ -191,7 +196,37 @@ export function AiHelperSidebar(props: AiHelperSidebarProps) {
     setMessages([]);
     setError(null);
     setInputValue('');
+    setPendingModifications(null);
   }, [diagramId]);
+
+  const handleApplyModifications = (modificationsToApply: DiagramModification[]) => {
+    if (!onDiagramUpdate) {
+      console.warn('onDiagramUpdate not provided, cannot apply modifications');
+      return;
+    }
+
+    try {
+      const updatedDiagram = applyModifications(diagramData, modificationsToApply);
+      onDiagramUpdate(updatedDiagram);
+      setPendingModifications(null);
+      
+      // Add a system message indicating modifications were applied
+      const systemMessage: AiMessage = {
+        id: `system-${Date.now()}`,
+        role: 'system',
+        content: `Applied ${modificationsToApply.length} modification(s) to the diagram.`,
+        createdAt: new Date()
+      };
+      setMessages((prev) => [...prev, systemMessage]);
+    } catch (err) {
+      console.error('Failed to apply modifications:', err);
+      setError(err instanceof Error ? err.message : 'Failed to apply modifications');
+    }
+  };
+
+  const handleRejectModifications = () => {
+    setPendingModifications(null);
+  };
 
   const handleToggle = () => {
     setIsOpen((prev) => !prev);
@@ -224,30 +259,37 @@ export function AiHelperSidebar(props: AiHelperSidebarProps) {
     setError(null);
 
     try {
-      const response = await queryAi({
-        query: trimmed,
-        diagramContext: {
-          diagramId: contextSummary.diagramId,
-          summary: buildAiContextSummary(contextSummary, diagramData),
-          // Full structure for LightRAG / backend
+      // Use architect-assistant endpoint which intelligently decides when to use LightRAG
+      const response = await callAiArchitectAssistant({
+        question: trimmed,
+        diagramMetadata: {
+          id: contextSummary.diagramId,
+          name: diagramData.title || 'Untitled Diagram',
+          // Full diagram structure for AI to understand current diagram
           nodes: contextSummary.nodes,
           edges: contextSummary.edges,
-          // Also include raw diagram structure so the backend / LightRAG
-          // can use it if desired.
+          summary: buildAiContextSummary(contextSummary, diagramData),
+          // Raw structure for detailed analysis
           rawItems: diagramData.items,
           rawViews: diagramData.views
-        } as any
+        }
       });
 
       const assistantMessage: AiMessage = {
         id: `assistant-${Date.now()}`,
         role: 'assistant',
-        content:
-          tryParseLightRagAnswer(response.answer)?.text ?? response.answer,
+        content: response.answer,
         createdAt: new Date()
       };
 
       setMessages((prev) => [...prev, assistantMessage]);
+
+      // Check if response includes modifications
+      if (response.modifications && response.modifications.length > 0) {
+        setPendingModifications(response.modifications);
+      } else {
+        setPendingModifications(null);
+      }
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : 'Unknown error occurred';
@@ -324,6 +366,13 @@ export function AiHelperSidebar(props: AiHelperSidebarProps) {
                 <div className="ai-message-content">{message.content}</div>
               </div>
             ))}
+            {pendingModifications && pendingModifications.length > 0 && (
+              <DiagramModificationPreview
+                modifications={pendingModifications}
+                onApply={handleApplyModifications}
+                onReject={handleRejectModifications}
+              />
+            )}
           </div>
 
           <form className="ai-input-area" onSubmit={handleSubmit}>

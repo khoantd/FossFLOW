@@ -172,11 +172,42 @@ Response: { success: boolean }
 
 ### Configuration
 
-**Environment Variables** (`.env`):
+**Environment Variables** (`.env` file in `packages/fossflow-backend/`):
+
+#### Server & Storage
 - `ENABLE_SERVER_STORAGE`: Enable/disable storage endpoints (default: `true`)
 - `STORAGE_PATH`: Directory for diagram files (default: `/data/diagrams`)
 - `BACKEND_PORT`: Server port (default: `3001`)
 - `ENABLE_GIT_BACKUP`: Enable Git version control (default: `false`)
+
+#### Authentication (Optional)
+- `AUTH_ENABLED`: Enable user authentication (default: `false`)
+- `JWT_SECRET`: Secret key for JWT tokens (required if `AUTH_ENABLED=true`)
+- `JWT_EXPIRES_IN`: JWT expiration time (default: `1h`)
+- `AUTH_COOKIE_NAME`: Cookie name for auth tokens (default: `fossflow_auth`)
+- `AUTH_COOKIE_SECURE`: Use secure cookies (default: `false`, auto `true` in production)
+- `AUTH_CORS_ORIGIN`: Allowed CORS origins (comma-separated)
+
+#### AI Assistant - LiteLLM Configuration
+- `ENABLE_AI_ASSISTANT`: Feature flag to enable AI assistant (default: `false`)
+- `LITELLM_BASE_URL`: LiteLLM proxy base URL (e.g., `https://api.litellm.ai` or your self-hosted instance)
+- `LITELLM_API_KEY`: LiteLLM API key
+- `LITELLM_TIMEOUT_MS`: Timeout for LiteLLM requests in milliseconds (default: `20000`)
+- `AI_ASSISTANT_MODEL`: Model to use for AI assistant (default: `gpt-4.1-mini`)
+
+#### AI Assistant - LightRAG Configuration (Knowledge Assistant)
+- `LIGHTRAG_BASE_URL`: LightRAG service base URL (default: `https://lightrag-latest-xyu3.onrender.com`)
+- `LIGHTRAG_QUERY_STREAM_PATH`: Query stream endpoint path (default: `/query/stream`)
+- `LIGHTRAG_API_KEY`: LightRAG API key (optional, if your instance requires auth)
+- `LIGHTRAG_API_KEY_HEADER`: Header name for API key (default: `Authorization`)
+- `LIGHTRAG_API_KEY_PREFIX`: Prefix for API key (default: `Bearer`)
+- `LIGHTRAG_TIMEOUT_MS`: Timeout for LightRAG requests in milliseconds (default: `90000`)
+
+**Where to put these values:**
+1. Create a `.env` file in `packages/fossflow-backend/` directory
+2. Add the variables above with your actual values
+3. Never commit `.env` to version control (it should be in `.gitignore`)
+4. For production, set these via your deployment platform's environment variable configuration
 
 ### Storage Format
 

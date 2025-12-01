@@ -8,25 +8,25 @@ const DEFAULT_LIGHTRAG_QUERY_STREAM_PATH = '/query/stream';
 // support long-running analysis tasks while still failing fast on hangs.
 const DEFAULT_TIMEOUT_MS = 90000;
 
-const LIGHTRAG_BASE_URL =
+export const LIGHTRAG_BASE_URL =
   process.env.LIGHTRAG_BASE_URL || DEFAULT_LIGHTRAG_BASE_URL;
-const LIGHTRAG_QUERY_STREAM_PATH =
+export const LIGHTRAG_QUERY_STREAM_PATH =
   process.env.LIGHTRAG_QUERY_STREAM_PATH || DEFAULT_LIGHTRAG_QUERY_STREAM_PATH;
-const LIGHTRAG_TIMEOUT_MS = Number.parseInt(
+export const LIGHTRAG_TIMEOUT_MS = Number.parseInt(
   process.env.LIGHTRAG_TIMEOUT_MS ?? '',
   10
 ) || DEFAULT_TIMEOUT_MS;
 
-const LIGHTRAG_API_KEY = process.env.LIGHTRAG_API_KEY;
-const LIGHTRAG_API_KEY_HEADER =
+export const LIGHTRAG_API_KEY = process.env.LIGHTRAG_API_KEY;
+export const LIGHTRAG_API_KEY_HEADER =
   process.env.LIGHTRAG_API_KEY_HEADER || 'Authorization';
-const LIGHTRAG_API_KEY_PREFIX =
+export const LIGHTRAG_API_KEY_PREFIX =
   process.env.LIGHTRAG_API_KEY_PREFIX ?? 'Bearer';
 
 /**
  * Normalize a LightRAG configuration snapshot for debugging.
  */
-function getLightRagConfigSnapshot() {
+export function getLightRagConfigSnapshot() {
   return {
     baseUrl: LIGHTRAG_BASE_URL,
     queryStreamPath: LIGHTRAG_QUERY_STREAM_PATH,
@@ -117,9 +117,22 @@ export async function callLightRagQueryStream(params) {
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => '');
-      const error = new Error(
-        `LightRAG request failed with status ${response.status}`
-      );
+      let errorMessage = `LightRAG request failed with status ${response.status}`;
+      
+      // Try to extract more specific error from response body
+      try {
+        const errorBody = JSON.parse(errorText);
+        if (errorBody.detail) {
+          errorMessage = `LightRAG ${response.status}: ${errorBody.detail}`;
+        }
+      } catch {
+        // If parsing fails, use the raw text if available
+        if (errorText && errorText.length > 0 && errorText.length < 200) {
+          errorMessage = `LightRAG ${response.status}: ${errorText}`;
+        }
+      }
+      
+      const error = new Error(errorMessage);
       error.status = response.status;
       error.body = errorText;
       error.config = getLightRagConfigSnapshot();
