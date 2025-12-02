@@ -1,5 +1,6 @@
 import React, { useMemo, memo } from 'react';
 import { Box, Typography, Stack } from '@mui/material';
+import { keyframes } from '@mui/material/styles';
 import {
   PROJECTED_TILE_SIZE,
   DEFAULT_LABEL_HEIGHT,
@@ -63,6 +64,22 @@ export const Node = memo(({ node, order }: Props) => {
     }
   }, [healthStatus]);
 
+  // Pulsing animation for unhealthy and checking states
+  const pulseAnimation = useMemo(() => keyframes`
+    0% {
+      opacity: 0.5;
+      transform: scale(0.9);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+    100% {
+      opacity: 0.5;
+      transform: scale(0.9);
+    }
+  `, []);
+
   // If modelItem doesn't exist, don't render the node
   if (!modelItem) {
     return null;
@@ -123,32 +140,27 @@ export const Node = memo(({ node, order }: Props) => {
             }}
           >
             {iconComponent}
-            {showHealthBadge && (
-              <Box
-                sx={{
-                  position: 'absolute',
-                  top: -4,
-                  right: -4,
-                  width: 10,
-                  height: 10,
-                  borderRadius: '50%',
-                  bgcolor: badgeColor,
-                  border: '2px solid white',
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
-                  zIndex: 1000
-                }}
-                title={
-                  healthStatus === 'healthy'
-                    ? 'Service is healthy'
-                    : healthStatus === 'unhealthy'
-                    ? 'Service is unhealthy'
-                    : healthStatus === 'checking'
-                    ? 'Checking service health...'
-                    : 'Service health unknown'
-                }
-              />
-            )}
           </Box>
+        )}
+        {showHealthBadge && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: -4,
+              right: -4,
+              width: 12,
+              height: 12,
+              borderRadius: '50%',
+              bgcolor: badgeColor,
+              border: '2px solid white',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.3)',
+              pointerEvents: 'none',
+              zIndex: order + 1,
+              ...((healthStatus === 'unhealthy' || healthStatus === 'checking') && {
+                animation: `${pulseAnimation} 2s ease-in-out infinite`
+              })
+            }}
+          />
         )}
       </Box>
     </Box>

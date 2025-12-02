@@ -1,6 +1,6 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useModelStore } from 'src/stores/modelStore';
-import { checkServiceHealth, clearHealthCheckCache, type HealthStatus } from 'src/services/healthCheckService';
+import { checkServiceHealth, clearHealthCheckCache, type HealthStatus, type HealthCheckResponseField } from 'src/services/healthCheckService';
 import { ModelItem } from 'src/types';
 
 /**
@@ -25,6 +25,8 @@ export const useHealthCheckManager = (
     if (!serviceUrl || !serviceUrl.trim()) {
       return;
     }
+
+    const responseField = (item.customProperties?.healthCheckResponseField as HealthCheckResponseField) || 'auto';
 
     // Get latest state from store
     const currentState = modelActions.get();
@@ -53,7 +55,7 @@ export const useHealthCheckManager = (
     clearHealthCheckCache(serviceUrl.trim());
 
     try {
-      const result = await checkServiceHealth(serviceUrl.trim());
+      const result = await checkServiceHealth(serviceUrl.trim(), responseField);
 
       // Get latest state again (in case it changed)
       const latestState = modelActions.get();

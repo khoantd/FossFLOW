@@ -1,5 +1,6 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Slider, Box, TextField, Stack, Chip, IconButton, Button, CircularProgress, Typography, Alert } from '@mui/material';
+import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { Slider, Box, TextField, Stack, Chip, IconButton, Button, CircularProgress, Typography, Alert, MenuItem, Select, FormControl, InputLabel } from '@mui/material';
+import { keyframes } from '@mui/material/styles';
 import { Add as AddIcon, Close as CloseIcon, Refresh as RefreshIcon } from '@mui/icons-material';
 import { ModelItem, ViewItem } from 'src/types';
 import { RichTextEditor } from 'src/components/RichTextEditor/RichTextEditor';
@@ -7,7 +8,7 @@ import { useModelItem } from 'src/hooks/useModelItem';
 import { useModelStore } from 'src/stores/modelStore';
 import { DeleteButton } from '../../components/DeleteButton';
 import { Section } from '../../components/Section';
-import { checkServiceHealth, clearHealthCheckCache, type HealthStatus } from 'src/services/healthCheckService';
+import { checkServiceHealth, clearHealthCheckCache, type HealthStatus, type HealthCheckResponseField } from 'src/services/healthCheckService';
 
 export type NodeUpdates = {
   model: Partial<ModelItem>;
@@ -53,6 +54,23 @@ export const NodeSettings = ({
   const healthStatus = (customProperties.healthStatus as HealthStatus) || 'unknown';
   const healthLastChecked = customProperties.healthLastChecked || '';
   const healthError = customProperties.healthError || '';
+  const healthCheckResponseField = (customProperties.healthCheckResponseField as HealthCheckResponseField) || 'auto';
+
+  // Pulsing animation for unhealthy and checking states
+  const pulseAnimation = useMemo(() => keyframes`
+    0% {
+      opacity: 0.5;
+      transform: scale(0.9);
+    }
+    50% {
+      opacity: 1;
+      transform: scale(1.1);
+    }
+    100% {
+      opacity: 0.5;
+      transform: scale(0.9);
+    }
+  `, []);
 
   // Update local scale when icon changes
   useEffect(() => {
@@ -161,7 +179,7 @@ export const NodeSettings = ({
     clearHealthCheckCache(url.trim());
 
     try {
-      const result = await checkServiceHealth(url.trim());
+      const result = await checkServiceHealth(url.trim(), healthCheckResponseField);
       
       const updatedProperties = {
         ...customProperties,
@@ -208,31 +226,21 @@ export const NodeSettings = ({
     }
     
     onModelItemUpdated({ customProperties: updatedProperties });
-    
-    // Auto-trigger health check if URL is provided
-    if (newUrl.trim()) {
-      // Debounce the health check
-      const timeoutId = setTimeout(() => {
-        performHealthCheck(newUrl.trim());
-      }, 1000);
-      
-      return () => clearTimeout(timeoutId);
-    }
-  }, [customProperties, onModelItemUpdated, performHealthCheck]);
+  }, [customProperties, onModelItemUpdated]);
+
+  const handleResponseFieldChange = useCallback((newField: HealthCheckResponseField) => {
+    const updatedProperties = {
+      ...customProperties,
+      healthCheckResponseField: newField
+    };
+    onModelItemUpdated({ customProperties: updatedProperties });
+  }, [customProperties, onModelItemUpdated]);
 
   const handleManualHealthCheck = useCallback(() => {
     if (serviceUrl) {
       performHealthCheck(serviceUrl);
     }
   }, [serviceUrl, performHealthCheck]);
-
-  // Auto-check health when component mounts if URL exists
-  useEffect(() => {
-    if (serviceUrl && healthStatus === 'unknown') {
-      performHealthCheck(serviceUrl);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
 
   if (!modelItem) {
     return null;
@@ -328,6 +336,22 @@ export const NodeSettings = ({
           />
           
           {serviceUrl && (
+            <FormControl size="small" fullWidth>
+              <InputLabel>Response Field</InputLabel>
+              <Select
+                value={healthCheckResponseField}
+                label="Response Field"
+                onChange={(e) => handleResponseFieldChange(e.target.value as HealthCheckResponseField)}
+              >
+                <MenuItem value="auto">Auto-detect</MenuItem>
+                <MenuItem value="success">success field</MenuItem>
+                <MenuItem value="status">status field</MenuItem>
+                <MenuItem value="synthetic">Synthetic (connectivity only)</MenuItem>
+              </Select>
+            </FormControl>
+          )}
+          
+          {serviceUrl && (
             <>
               <Stack direction="row" spacing={1} alignItems="center">
                 <Box
@@ -343,7 +367,10 @@ export const NodeSettings = ({
                         : healthStatus === 'checking'
                         ? 'warning.main'
                         : 'grey.400',
-                    flexShrink: 0
+                    flexShrink: 0,
+                    ...((healthStatus === 'unhealthy' || healthStatus === 'checking') && {
+                      animation: `${pulseAnimation} 2s ease-in-out infinite`
+                    })
                   }}
                 />
                 <Typography variant="body2" sx={{ flex: 1 }}>
@@ -379,7 +406,7 @@ export const NodeSettings = ({
       <Section title="Custom Properties">
         <Stack spacing={1}>
           {Object.entries(customProperties)
-            .filter(([key]) => !['serviceUrl', 'healthStatus', 'healthLastChecked', 'healthError'].includes(key))
+            .filter(([key]) => !['serviceUrl', 'healthStatus', 'healthLastChecked', 'healthError', 'healthCheckResponseField'].includes(key))
             .map(([key, value]) => (
             <Stack key={key} direction="row" spacing={1} alignItems="center">
               <TextField
