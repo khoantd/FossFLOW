@@ -26,20 +26,21 @@
 
 # This is a starter workflow to help you get started with EthicalCheck Actions
 
+# DISABLED: The action apisec-inc/ethicalcheck-action is no longer available.
+# Error: Unable to resolve action `apisec-inc/ethicalcheck-action`, not found
+# This workflow has been disabled to prevent CI/CD failures.
+# To re-enable, either:
+# 1. Find an alternative API security testing action
+# 2. Update the action reference if it's been moved to a new location
+# 3. Remove this workflow file if no longer needed
+
 name: EthicalCheck-Workflow
 
 # Controls when the workflow will run
+# DISABLED - Auto-triggers removed due to unavailable action: apisec-inc/ethicalcheck-action
+# Only workflow_dispatch remains so the workflow file is valid but won't auto-run
 on:
-  # Triggers the workflow on push or pull request events but only for the "master" branch
-  # Customize trigger events based on your DevSecOps processes.
-  push:
-    branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-  schedule:
-    - cron: '31 22 * * 0'
-
-  # Allows you to run this workflow manually from the Actions tab
+  # Manual trigger only - workflow will not run automatically
   workflow_dispatch:
 
 permissions:
