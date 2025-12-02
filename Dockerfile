@@ -8,8 +8,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY packages/fossflow-lib/package*.json ./packages/fossflow-lib/
 COPY packages/fossflow-app/package*.json ./packages/fossflow-app/
+COPY packages/fossflow-backend/package*.json ./packages/fossflow-backend/
 
-#Update NPM
+# Update NPM
 RUN npm install -g npm@11.5.2
 
 # Install dependencies for the entire workspace
@@ -27,7 +28,7 @@ FROM node:22-alpine
 # Install nginx
 RUN apk add --no-cache nginx
 
-# Copy backend code
+# Copy backend code and its node_modules from build stage
 COPY --from=build /app/packages/fossflow-backend /app/packages/fossflow-backend
 
 # Copy the built React app to Nginx's web server directory
@@ -50,6 +51,8 @@ EXPOSE 80 3001
 ENV ENABLE_SERVER_STORAGE=true
 ENV STORAGE_PATH=/data/diagrams
 ENV BACKEND_PORT=3001
+ENV ENABLE_GIT_BACKUP=false
+ENV NODE_ENV=production
 
 # Start services
 ENTRYPOINT ["/docker-entrypoint.sh"]

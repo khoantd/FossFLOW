@@ -133,6 +133,55 @@ To disable server storage, set `ENABLE_SERVER_STORAGE=false`:
 docker run -p 80:80 -e ENABLE_SERVER_STORAGE=false stnsmith/fossflow:latest
 ```
 
+### Building Docker Images
+
+FossFLOW includes a build script for creating Docker images with configurable platform and registry settings.
+
+**Using the npm script:**
+```bash
+# Build and push with defaults (stnsmith/fossflow:latest on linux/amd64)
+npm run docker:build-image
+
+# Build for ARM64 platform
+npm run docker:build-image -- --platform linux/arm64
+
+# Build and push to GitHub Container Registry
+npm run docker:build-image -- --registry ghcr.io/username --image-name fossflow
+
+# Build with git SHA as tag
+npm run docker:build-image -- --tag git-sha
+
+# Build only, don't push
+npm run docker:build-image -- --no-push
+```
+
+**Using the script directly:**
+```bash
+# Show help
+./scripts/build-image.sh --help
+
+# Build for specific platform
+./scripts/build-image.sh --platform linux/arm64
+
+# Build for multiple platforms (requires docker buildx)
+./scripts/build-image.sh --platform linux/amd64,linux/arm64
+```
+
+**Environment variables:**
+You can also configure the build using environment variables:
+```bash
+DOCKER_REGISTRY=ghcr.io/username \
+DOCKER_IMAGE_NAME=fossflow \
+IMAGE_TAG=v1.7.0 \
+DOCKER_PLATFORM=linux/amd64 \
+./scripts/build-image.sh
+```
+
+**Prerequisites:**
+- Docker installed and running
+- For multi-platform builds: `docker buildx` (usually included with Docker Desktop)
+- For pushing: logged in to the target registry (`docker login <registry>`)
+
 ## Quick Start (Local Development)
 
 ```bash
