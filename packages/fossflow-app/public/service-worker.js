@@ -25,6 +25,53 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('fetch', event => {
+  const request = event.request;
+  const url = new URL(request.url);
+  
+  // Check if this is a health check request to an external URL
+  // Health checks are typically GET requests to external HTTP/HTTPS URLs
+  const isExternalUrl = url.protocol === 'http:' || url.protocol === 'https:';
+  const isSameOrigin = url.origin === self.location.origin;
+  const isGetRequest = request.method === 'GET';
+  
+  // Check if it's a health check endpoint pattern (common health check paths)
+  const healthCheckPaths = ['/health', '/healthz', '/status', '/api/health'];
+  const isHealthCheckPath = healthCheckPaths.some(path => url.pathname.includes(path));
+  
+  // Also check if it's a request that might need proxying (external URL, GET request)
+  // We'll proxy external GET requests that might be health checks
+  const shouldProxy = isExternalUrl && !isSameOrigin && isGetRequest && 
+    (isHealthCheckPath || request.headers.get('Accept')?.includes('application/json'));
+  
+  if (shouldProxy) {
+    // Route through backend proxy
+    const proxyUrl = `${self.location.origin}/api/proxy/health-check?url=${encodeURIComponent(request.url)}`;
+    
+    event.respondWith(
+      fetch(proxyUrl, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json'
+        }
+      })
+        .then(proxyResponse => {
+          if (!proxyResponse.ok) {
+            // If proxy fails, fall back to direct fetch
+            return fetch(request);
+          }
+          
+          // Return the proxied response
+          return proxyResponse;
+        })
+        .catch(() => {
+          // If proxy request fails, fall back to direct fetch
+          return fetch(request);
+        })
+    );
+    return;
+  }
+  
+  // Standard caching behavior for other requests
   event.respondWith(
     caches.match(event.request)
       .then(response => {

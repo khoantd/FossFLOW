@@ -29,6 +29,13 @@ const healthCheckCache = new Map<string, { result: HealthCheckResult; timestamp:
 const CACHE_DURATION_MS = 10000; // Cache for 10 seconds
 
 /**
+ * Cache for backend proxy availability
+ */
+let proxyAvailable: boolean | null = null;
+let proxyAvailabilityCheckedAt: number | null = null;
+const PROXY_AVAILABILITY_CACHE_MS = 60000; // Re-check every 60 seconds
+
+/**
  * Normalizes a URL by ensuring it has a protocol
  * Returns the normalized URL and whether the original URL had a protocol
  */
@@ -53,6 +60,213 @@ function normalizeUrl(url: string): { url: string; hadProtocol: boolean } {
  */
 function convertToHttp(url: string): string {
   return url.replace(/^https:\/\//i, 'http://');
+}
+
+/**
+ * Gets the backend base URL for proxy requests
+ */
+function getBackendBaseUrl(): string {
+  if (typeof window === 'undefined') {
+    return '';
+  }
+  
+  // In development, backend runs on localhost:3001
+  // In production, use relative path (nginx proxy)
+  const isDevelopment = window.location.hostname === 'localhost' && window.location.port === '3000';
+  return isDevelopment ? 'http://localhost:3001' : '';
+}
+
+/**
+ * Checks if backend proxy endpoint is available
+ */
+async function isProxyAvailable(): Promise<boolean> {
+  const now = Date.now();
+  
+  // Return cached result if still valid
+  if (
+    proxyAvailable !== null &&
+    proxyAvailabilityCheckedAt !== null &&
+    (now - proxyAvailabilityCheckedAt) < PROXY_AVAILABILITY_CACHE_MS
+  ) {
+    return proxyAvailable;
+  }
+  
+  const backendBaseUrl = getBackendBaseUrl();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2000); // 2 second timeout for availability check
+  
+  try {
+    const proxyCheckUrl = backendBaseUrl
+      ? `${backendBaseUrl}/api/proxy/health-check?url=http://example.com`
+      : '/api/proxy/health-check?url=http://example.com';
+    
+    const response = await fetch(proxyCheckUrl, {
+      method: 'GET',
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    proxyAvailable = response.ok || response.status === 400; // 400 means endpoint exists (invalid URL is expected)
+    proxyAvailabilityCheckedAt = now;
+    return proxyAvailable;
+  } catch {
+    clearTimeout(timeoutId);
+    proxyAvailable = false;
+    proxyAvailabilityCheckedAt = now;
+    return false;
+  }
+}
+
+/**
+ * Tries to check health using backend proxy
+ */
+async function tryHealthEndpointViaProxy(
+  url: string,
+  timeoutMs: number,
+  responseField: HealthCheckResponseField
+): Promise<{ success: boolean; error?: string }> {
+  const backendBaseUrl = getBackendBaseUrl();
+  const proxyUrl = backendBaseUrl
+    ? `${backendBaseUrl}/api/proxy/health-check?url=${encodeURIComponent(url)}&responseField=${responseField}`
+    : `/api/proxy/health-check?url=${encodeURIComponent(url)}&responseField=${responseField}`;
+  
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    const response = await fetch(proxyUrl, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json'
+      },
+      signal: controller.signal
+    });
+    
+    clearTimeout(timeoutId);
+    
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Proxy request failed' }));
+      return { success: false, error: errorData.error || `Proxy returned ${response.status}` };
+    }
+    
+    const data = await response.json();
+    
+    // Proxy returns { success: boolean, proxied: true, ... }
+    // For synthetic mode, success: true means connectivity was verified (regardless of HTTP status)
+    // For other modes, success: true means health check passed based on response body/status
+    if (data.success === true) {
+      console.debug('[HealthCheck] Proxy check succeeded:', {
+        responseField,
+        status: data.status,
+        reachable: data.reachable,
+        proxied: data.proxied
+      });
+      return { success: true };
+    }
+    
+    // If proxy returned an error, use it; otherwise provide a generic message
+    return { success: false, error: data.error || 'Health check failed via proxy' };
+  } catch (error) {
+    clearTimeout(timeoutId);
+    
+    if (error instanceof Error) {
+      if (error.name === 'AbortError') {
+        return { success: false, error: 'Proxy request timed out' };
+      }
+      return { success: false, error: `Proxy error: ${error.message}` };
+    }
+    
+    return { success: false, error: 'Proxy request failed' };
+  }
+}
+
+/**
+ * Determines if a request should use proxy
+ */
+function shouldUseProxy(url: string, responseField: HealthCheckResponseField): boolean {
+  if (typeof window === 'undefined') {
+    return false; // Server-side, no proxy needed
+  }
+  
+  // Use proxy if:
+  // 1. HTTP target + synthetic mode (explicit case: HTTP protocol with synthetic type always uses proxy)
+  // 2. HTTPS page trying to fetch HTTP (mixed content)
+  // 3. Synthetic mode in general (which can have mixed content restrictions or network errors)
+  //    Synthetic mode benefits from proxy to bypass browser restrictions
+  const isHttpsPage = window.location.protocol === 'https:';
+  const isHttpTarget = url.toLowerCase().startsWith('http://');
+  const isSyntheticMode = responseField === 'synthetic';
+  
+  // Explicit case: HTTP protocol + synthetic mode always uses proxy
+  if (isHttpTarget && isSyntheticMode) {
+    return true;
+  }
+  
+  // For synthetic mode in general, always try proxy first (works for both HTTP and HTTPS pages)
+  // For other modes, only use proxy for mixed content scenarios (HTTPS page + HTTP target)
+  return isSyntheticMode || (isHttpsPage && isHttpTarget);
+}
+
+/**
+ * Checks if an error indicates mixed content blocking (HTTPS page trying to fetch HTTP with no-cors)
+ * This is a browser security restriction that blocks no-cors requests from HTTPS pages to HTTP endpoints
+ */
+function isMixedContentError(error: unknown, url: string, responseField: HealthCheckResponseField): boolean {
+  // Only check for mixed content in synthetic mode (which uses no-cors)
+  if (responseField !== 'synthetic') {
+    return false;
+  }
+  
+  // Check if the page is served over HTTPS
+  if (typeof window === 'undefined' || window.location.protocol !== 'https:') {
+    return false;
+  }
+  
+  // Check if the target URL is HTTP (not HTTPS)
+  if (!url.toLowerCase().startsWith('http://')) {
+    return false;
+  }
+  
+  // Mixed content errors typically appear as TypeError or NetworkError with "Failed to fetch"
+  if (!(error instanceof Error)) {
+    return false;
+  }
+  
+  const errorMessage = error.message.toLowerCase();
+  const errorName = error.name.toLowerCase();
+  const errorString = String(error).toLowerCase();
+  
+  // Mixed content errors appear as network errors when using no-cors mode
+  // The error can be "TypeError: NetworkError when attempting to fetch resource."
+  // or "Failed to fetch" or other network-related errors
+  const isNetworkError = errorMessage.includes('failed to fetch') || 
+                         errorMessage.includes('networkerror') ||
+                         errorMessage.includes('network request failed') ||
+                         errorMessage.includes('networkerror when attempting to fetch') ||
+                         errorMessage.includes('when attempting to fetch resource') ||
+                         (errorName === 'typeerror' && errorMessage.includes('networkerror')) ||
+                         (error instanceof DOMException && error.name === 'NetworkError') ||
+                         (errorName === 'typeerror' && errorString.includes('networkerror'));
+  
+  // Exclude CORS errors (already handled separately)
+  const isCorsRelated = errorMessage.includes('cors') || 
+                        errorMessage.includes('cross-origin') ||
+                        errorString.includes('cors') ||
+                        errorString.includes('cross-origin');
+  
+  const isMixedContent = isNetworkError && !isCorsRelated;
+  
+  if (isMixedContent) {
+    console.debug('[HealthCheck] Detected mixed content error:', {
+      errorName,
+      errorMessage,
+      url,
+      responseField,
+      pageProtocol: window.location.protocol
+    });
+  }
+  
+  return isMixedContent;
 }
 
 /**
@@ -170,7 +384,58 @@ async function tryHealthEndpoint(
   // If baseUrl is empty, endpoint is the full URL
   const url = baseUrl ? `${baseUrl.replace(/\/$/, '')}${endpoint}` : endpoint;
   
-  console.debug('[HealthCheck] Fetching URL:', url);
+  // Check if we should use proxy
+  const useProxy = shouldUseProxy(url, responseField);
+  const isSyntheticMode = responseField === 'synthetic';
+  
+  if (useProxy) {
+    // For synthetic mode, always try proxy directly (skip availability check)
+    // Availability check might fail due to network issues, but proxy might still work
+    // For other modes, check availability first
+    if (isSyntheticMode) {
+      // Explicit case: HTTP protocol + synthetic mode always uses proxy as primary method
+      const isHttpTarget = url.toLowerCase().startsWith('http://');
+      if (isHttpTarget) {
+        console.debug('[HealthCheck] HTTP protocol + synthetic mode: using proxy for:', url);
+      } else {
+        console.debug('[HealthCheck] Synthetic mode: trying proxy directly for:', url);
+      }
+      const proxyResult = await tryHealthEndpointViaProxy(url, timeoutMs, responseField);
+      
+      if (proxyResult.success) {
+        return { success: true };
+      }
+      
+      // If proxy failed, log and fall through to direct fetch as last resort
+      console.debug('[HealthCheck] Proxy failed for synthetic mode, falling back to direct fetch:', proxyResult.error);
+      // Fall through to direct fetch
+    } else {
+      // For non-synthetic modes, check availability first
+      const proxyAvailable = await isProxyAvailable();
+      if (proxyAvailable) {
+        console.debug('[HealthCheck] Using proxy for:', url);
+        const proxyResult = await tryHealthEndpointViaProxy(url, timeoutMs, responseField);
+        
+        if (proxyResult.success) {
+          return { success: true };
+        }
+        
+        // If proxy failed but it's not a critical error, fall through to direct fetch
+        // Only fall through if it's a timeout or network error, not if it's a health check failure
+        if (proxyResult.error?.includes('Proxy error') || proxyResult.error?.includes('timed out')) {
+          console.debug('[HealthCheck] Proxy failed, falling back to direct fetch:', proxyResult.error);
+          // Fall through to direct fetch
+        } else {
+          // Proxy worked but health check failed - return the result
+          return proxyResult;
+        }
+      } else {
+        console.debug('[HealthCheck] Proxy not available, using direct fetch');
+      }
+    }
+  }
+  
+  console.debug('[HealthCheck] Fetching URL directly:', url);
   
   // Use AbortController for browser compatibility (AbortSignal.timeout() not supported in all browsers)
   const controller = new AbortController();
@@ -286,15 +551,60 @@ async function tryHealthEndpoint(
         // For synthetic checks, CORS errors shouldn't occur (we use no-cors mode)
         // But if they do, it means the service is not reachable
         if (responseField === 'synthetic') {
+          // Try proxy as fallback for synthetic mode CORS errors
+          const proxyAvailable = await isProxyAvailable();
+          if (proxyAvailable) {
+            console.debug('[HealthCheck] CORS error in synthetic mode, trying proxy');
+            const proxyResult = await tryHealthEndpointViaProxy(url, timeoutMs, responseField);
+            if (proxyResult.success) {
+              return { success: true };
+            }
+          }
           return { success: false, error: 'Service unreachable or blocked' };
         }
+        
+        // Try proxy as fallback for CORS errors
+        const proxyAvailable = await isProxyAvailable();
+        if (proxyAvailable) {
+          console.debug('[HealthCheck] CORS error detected, trying proxy');
+          const proxyResult = await tryHealthEndpointViaProxy(url, timeoutMs, responseField);
+          if (proxyResult.success) {
+            return { success: true };
+          }
+          // If proxy also fails, return the original CORS error
+        }
+        
         // Don't log CORS errors - browser already logs them, and they're expected for external services
         // Return a user-friendly message
         return { success: false, error: 'CORS blocked - service does not allow cross-origin requests from browser' };
       }
       
+      // Check for mixed content errors (HTTPS page trying to fetch HTTP with no-cors)
+      // This must be checked before generic network error handling
+      const mixedContentCheck = isMixedContentError(error, url, responseField);
+      if (mixedContentCheck) {
+        console.debug('[HealthCheck] Mixed content error detected, trying proxy');
+        // Try proxy as fallback for mixed content errors
+        const proxyAvailable = await isProxyAvailable();
+        if (proxyAvailable) {
+          const proxyResult = await tryHealthEndpointViaProxy(url, timeoutMs, responseField);
+          if (proxyResult.success) {
+            return { success: true };
+          }
+        }
+        return {
+          success: false,
+          error: 'Mixed content blocked - HTTPS pages cannot fetch HTTP endpoints in synthetic mode. Solutions: 1) Use HTTPS endpoint, 2) Use a different health check mode (auto/success/status), 3) Serve the app over HTTP for development, or 4) Enable backend proxy.'
+        };
+      }
+      
       // Log other errors for debugging
-      console.debug('[HealthCheck] Error checking service:', url, error);
+      console.debug('[HealthCheck] Error checking service:', url, error, {
+        errorName: error.name,
+        errorMessage: error.message,
+        responseField,
+        pageProtocol: typeof window !== 'undefined' ? window.location.protocol : 'unknown'
+      });
       
       // Check if this might be an HTTPS not supported error (only if we haven't already tried HTTP)
       if (tryHttpFallback && isLikelyHttpsNotSupportedError(error)) {
@@ -307,9 +617,41 @@ async function tryHealthEndpoint(
                              errorMessage.includes('networkerror') ||
                              errorMessage.includes('network request failed') ||
                              errorMessage.includes('networkerror when attempting to fetch') ||
+                             errorMessage.includes('when attempting to fetch resource') ||
                              (errorName === 'typeerror' && errorMessage.includes('networkerror'));
       
       if (isNetworkError) {
+        // For synthetic mode, try proxy as fallback for network errors
+        // Network errors in synthetic mode could be due to browser restrictions,
+        // firewall blocking, or connectivity issues that proxy can bypass
+        // Skip availability check for synthetic mode (same as initial attempt) since
+        // availability check might fail due to network issues, but proxy might still work
+        if (responseField === 'synthetic') {
+          console.debug('[HealthCheck] Network error in synthetic mode, trying proxy as fallback');
+          const proxyResult = await tryHealthEndpointViaProxy(url, timeoutMs, responseField);
+          if (proxyResult.success) {
+            return { success: true };
+          }
+          // If proxy also failed, continue with error message below
+          
+          // Network errors in synthetic mode with no-cors could be due to:
+          // - Service unreachable (firewall, network issue, service down)
+          // - DNS resolution failure
+          // - Connection timeout
+          // - Browser security restrictions (mixed content if HTTPS page)
+          const pageProtocol = typeof window !== 'undefined' ? window.location.protocol : 'unknown';
+          if (pageProtocol === 'https:') {
+            return { 
+              success: false, 
+              error: 'Network error in synthetic mode - service may be unreachable, blocked by firewall, or mixed content restriction (HTTPS page cannot fetch HTTP with no-cors). Try: 1) Verify service is running and accessible, 2) Check firewall/network settings, 3) Use a different health check mode, or 4) Use HTTPS endpoint.'
+            };
+          } else {
+            return { 
+              success: false, 
+              error: 'Network error in synthetic mode - service may be unreachable, blocked by firewall, or network connectivity issue. Try: 1) Verify service is running and accessible, 2) Check firewall/network settings, 3) Test connectivity from browser directly, or 4) Use a different health check mode.'
+            };
+          }
+        }
         // Network errors could be due to:
         // - Service unreachable
         // - SSL/TLS issues

@@ -525,6 +525,145 @@ if (STORAGE_ENABLED) {
   });
 }
 
+// Health check proxy endpoint - bypasses CORS and mixed content restrictions
+app.get('/api/proxy/health-check', async (req, res) => {
+  const { url, responseField = 'auto' } = req.query;
+  
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'Missing required parameter: url' });
+  }
+  
+  // Validate URL format
+  let targetUrl;
+  try {
+    targetUrl = new URL(url);
+  } catch {
+    return res.status(400).json({ error: 'Invalid URL format' });
+  }
+  
+  // Only allow http and https protocols for security
+  if (targetUrl.protocol !== 'http:' && targetUrl.protocol !== 'https:') {
+    return res.status(400).json({ error: 'Only HTTP and HTTPS URLs are allowed' });
+  }
+  
+  const timeoutMs = 5000; // 5 seconds default timeout
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  
+  try {
+    // Make the actual HTTP request server-side
+    const fetchResponse = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'Accept': 'application/json, text/plain, */*',
+        'User-Agent': 'FossFLOW-HealthCheck/1.0'
+      },
+      signal: controller.signal,
+      // Server-side fetch doesn't have CORS restrictions
+      redirect: 'follow'
+    });
+    
+    clearTimeout(timeoutId);
+    
+    // For synthetic mode, just return success if connection was established
+    // We don't check response body or status code - only connectivity matters
+    if (responseField === 'synthetic') {
+      // If we got here, the connection was successful (even if status is 404, 500, etc.)
+      return res.json({
+        success: true,
+        proxied: true,
+        status: fetchResponse.status,
+        reachable: true,
+        message: 'Connectivity verified (synthetic mode)'
+      });
+    }
+    
+    // Get response body
+    const contentType = fetchResponse.headers.get('content-type') || '';
+    let body;
+    
+    if (contentType.includes('application/json')) {
+      try {
+        body = await fetchResponse.json();
+      } catch {
+        // If JSON parsing fails, treat as text
+        body = await fetchResponse.text();
+      }
+    } else {
+      body = await fetchResponse.text();
+    }
+    
+    // Check health based on responseField
+    let healthy = false;
+    let usedField;
+    
+    if (responseField === 'auto' || responseField === 'success' || responseField === 'status') {
+      if (typeof body === 'object' && body !== null) {
+        const response = body;
+        
+        if (responseField === 'success' || responseField === 'auto') {
+          if ('success' in response && response.success === true) {
+            healthy = true;
+            usedField = 'success';
+          }
+        }
+        
+        if (!healthy && (responseField === 'status' || responseField === 'auto')) {
+          if ('status' in response) {
+            const statusValue = response.status;
+            if (
+              statusValue === true ||
+              statusValue === 'healthy' ||
+              statusValue === 'ok'
+            ) {
+              healthy = true;
+              usedField = 'status';
+            }
+          }
+        }
+      }
+    }
+    
+    // If response field check didn't determine health, use HTTP status code
+    if (!healthy && fetchResponse.status >= 200 && fetchResponse.status < 400) {
+      healthy = true;
+    }
+    
+    return res.json({
+      success: healthy,
+      proxied: true,
+      status: fetchResponse.status,
+      body: body,
+      usedField: usedField,
+      contentType: contentType
+    });
+    
+  } catch (error) {
+    clearTimeout(timeoutId);
+    
+    if (error instanceof Error) {
+      // Handle timeout
+      if (error.name === 'AbortError') {
+        return res.status(504).json({
+          error: 'Request timed out',
+          proxied: true
+        });
+      }
+      
+      // Handle network errors
+      return res.status(502).json({
+        error: error.message || 'Network error',
+        proxied: true
+      });
+    }
+    
+    return res.status(500).json({
+      error: 'Unknown error occurred',
+      proxied: true
+    });
+  }
+});
+
 // Start server
 app.listen(PORT, () => {
   console.log(`FossFLOW Backend Server running on port ${PORT}`);
