@@ -42,6 +42,7 @@ const initialState = () => {
       expandLabels: false, // Default to collapsed labels
       iconPackManager: null, // Will be set by Isoflow if provided
       perspectiveMode: 'isometric', // Default to isometric mode
+      hoveredConnectorId: null, // Track which connector is currently hovered
 
       actions: {
         setView: (view) => {
@@ -128,6 +129,9 @@ const initialState = () => {
         },
         setPerspectiveMode: (perspectiveMode) => {
           set({ perspectiveMode });
+        },
+        setHoveredConnectorId: (hoveredConnectorId) => {
+          set({ hoveredConnectorId });
         }
       }
     };

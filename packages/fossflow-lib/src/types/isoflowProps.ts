@@ -227,6 +227,12 @@ export interface LocaleProps {
       double: string;
     };
   };
+  canvasHints: {
+    zoomAndPanTitle: string;
+    zoomAndPanBody: string;
+    contextMenuTitle: string;
+    contextMenuBody: string;
+  };
   // other namespaces can be added here
 }
 

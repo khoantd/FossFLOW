@@ -187,6 +187,7 @@ export interface UiState {
   expandLabels: boolean;
   iconPackManager: IconPackManagerProps | null;
   perspectiveMode: PerspectiveMode;
+  hoveredConnectorId: string | null;
 
 }
 
@@ -216,6 +217,7 @@ export interface UiStateActions {
   setExpandLabels: (expand: boolean) => void;
   setIconPackManager: (iconPackManager: IconPackManagerProps | null) => void;
   setPerspectiveMode: (mode: PerspectiveMode) => void;
+  setHoveredConnectorId: (id: string | null) => void;
 
 }
 

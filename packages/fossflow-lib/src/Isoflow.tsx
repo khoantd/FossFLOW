@@ -13,6 +13,7 @@ import { UiOverlay } from 'src/components/UiOverlay/UiOverlay';
 import { UiStateProvider, useUiStateStore } from 'src/stores/uiStateStore';
 import { INITIAL_DATA, MAIN_MENU_OPTIONS } from 'src/config';
 import { useInitialDataManager } from 'src/hooks/useInitialDataManager';
+import { useHealthCheckManager } from 'src/hooks/useHealthCheckManager';
 import enUS from 'src/i18n/en-US';
 
 const App = ({
@@ -71,6 +72,11 @@ const App = ({
   useEffect(() => {
     uiStateActions.setIconPackManager(iconPackManager || null);
   }, [iconPackManager, uiStateActions]);
+
+  // Initialize health check manager for periodic service health checks
+  // Only enable in edit mode (not readonly)
+  const isReadonly = editorMode === 'EXPLORABLE_READONLY';
+  useHealthCheckManager(60000, !isReadonly);
 
   if (!initialDataManager.isReady) return null;
 

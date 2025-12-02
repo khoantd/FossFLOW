@@ -219,6 +219,12 @@ const locale: LocaleProps = {
     configPath2: "no canto superior esquerdo para acessar a Configuração.",
     canDisable: "Você pode desativar esse comportamento se desejar.",
     signature: "-Stan"
+  },
+  canvasHints: {
+    zoomAndPanTitle: "Navegando a tela",
+    zoomAndPanBody: "Role para ampliar, arraste em espaço vazio para mover. Mantenha Shift pressionado ao arrastar um nó para restringir o movimento.",
+    contextMenuTitle: "Ações contextuais",
+    contextMenuBody: "Clique com o botão direito em um nó, conector ou espaço vazio para ações específicas do contexto."
   }
 };
 

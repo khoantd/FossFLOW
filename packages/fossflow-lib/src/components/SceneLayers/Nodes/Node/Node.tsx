@@ -11,6 +11,7 @@ import { ViewItem } from 'src/types';
 import { useModelItem } from 'src/hooks/useModelItem';
 import { ExpandableLabel } from 'src/components/Label/ExpandableLabel';
 import { RichTextEditor } from 'src/components/RichTextEditor/RichTextEditor';
+import type { HealthStatus } from 'src/services/healthCheckService';
 
 interface Props {
   node: ViewItem;
@@ -42,6 +43,25 @@ export const Node = memo(({ node, order }: Props) => {
 
     return modelItem.description;
   }, [modelItem?.description]);
+
+  // Extract health check status
+  const serviceUrl = modelItem?.customProperties?.serviceUrl;
+  const healthStatus = (modelItem?.customProperties?.healthStatus as HealthStatus) || 'unknown';
+  const showHealthBadge = Boolean(serviceUrl);
+
+  // Get badge color based on status
+  const badgeColor = useMemo(() => {
+    switch (healthStatus) {
+      case 'healthy':
+        return '#4caf50'; // Green
+      case 'unhealthy':
+        return '#f44336'; // Red
+      case 'checking':
+        return '#ff9800'; // Orange/Yellow
+      default:
+        return '#9e9e9e'; // Gray
+    }
+  }, [healthStatus]);
 
   // If modelItem doesn't exist, don't render the node
   if (!modelItem) {
@@ -103,6 +123,31 @@ export const Node = memo(({ node, order }: Props) => {
             }}
           >
             {iconComponent}
+            {showHealthBadge && (
+              <Box
+                sx={{
+                  position: 'absolute',
+                  top: -4,
+                  right: -4,
+                  width: 10,
+                  height: 10,
+                  borderRadius: '50%',
+                  bgcolor: badgeColor,
+                  border: '2px solid white',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.3)',
+                  zIndex: 1000
+                }}
+                title={
+                  healthStatus === 'healthy'
+                    ? 'Service is healthy'
+                    : healthStatus === 'unhealthy'
+                    ? 'Service is unhealthy'
+                    : healthStatus === 'checking'
+                    ? 'Checking service health...'
+                    : 'Service health unknown'
+                }
+              />
+            )}
           </Box>
         )}
       </Box>

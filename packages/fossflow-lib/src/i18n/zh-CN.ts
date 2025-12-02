@@ -219,6 +219,12 @@ const locale: LocaleProps = {
       single: "Single Line",
       double: "Double Line"
     }
+  },
+  canvasHints: {
+    zoomAndPanTitle: "导航画布",
+    zoomAndPanBody: "滚动以缩放，在空白处拖动以平移。拖动节点时按住 Shift 键以限制移动。",
+    contextMenuTitle: "上下文操作",
+    contextMenuBody: "右键单击节点、连接器或空白处以获取特定于上下文的操作。"
   }
 };
 

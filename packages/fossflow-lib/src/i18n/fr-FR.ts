@@ -219,6 +219,12 @@ const locale: LocaleProps = {
     configPath2: "en haut à gauche pour accéder à la Configuration.",
     canDisable: "Vous pouvez désactiver ce comportement si vous le souhaitez.",
     signature: "-Stan"
+  },
+  canvasHints: {
+    zoomAndPanTitle: "Navigation sur le canevas",
+    zoomAndPanBody: "Faites défiler pour zoomer, faites glisser sur un espace vide pour vous déplacer. Maintenez Shift tout en faisant glisser un nœud pour contraindre le mouvement.",
+    contextMenuTitle: "Actions contextuelles",
+    contextMenuBody: "Clic droit sur un nœud, un connecteur ou un espace vide pour des actions spécifiques au contexte."
   }
 };
 

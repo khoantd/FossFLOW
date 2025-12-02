@@ -1,12 +1,13 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import { Slider, Box, TextField, Stack, Chip, IconButton } from '@mui/material';
-import { Add as AddIcon, Close as CloseIcon } from '@mui/icons-material';
+import { Slider, Box, TextField, Stack, Chip, IconButton, Button, CircularProgress, Typography, Alert } from '@mui/material';
+import { Add as AddIcon, Close as CloseIcon, Refresh as RefreshIcon } from '@mui/icons-material';
 import { ModelItem, ViewItem } from 'src/types';
 import { RichTextEditor } from 'src/components/RichTextEditor/RichTextEditor';
 import { useModelItem } from 'src/hooks/useModelItem';
 import { useModelStore } from 'src/stores/modelStore';
 import { DeleteButton } from '../../components/DeleteButton';
 import { Section } from '../../components/Section';
+import { checkServiceHealth, clearHealthCheckCache, type HealthStatus } from 'src/services/healthCheckService';
 
 export type NodeUpdates = {
   model: Partial<ModelItem>;
@@ -40,8 +41,18 @@ export const NodeSettings = ({
   const [newPropertyKey, setNewPropertyKey] = useState('');
   const [newPropertyValue, setNewPropertyValue] = useState('');
 
+  // Health check state
+  const [isCheckingHealth, setIsCheckingHealth] = useState(false);
+  const [healthCheckError, setHealthCheckError] = useState<string | undefined>(undefined);
+
   const tags = modelItem?.tags ?? [];
   const customProperties = modelItem?.customProperties ?? {};
+  
+  // Extract health check related properties
+  const serviceUrl = customProperties.serviceUrl || '';
+  const healthStatus = (customProperties.healthStatus as HealthStatus) || 'unknown';
+  const healthLastChecked = customProperties.healthLastChecked || '';
+  const healthError = customProperties.healthError || '';
 
   // Update local scale when icon changes
   useEffect(() => {
@@ -128,6 +139,101 @@ export const NodeSettings = ({
     [customProperties, onModelItemUpdated]
   );
 
+  // Health check functions
+  const performHealthCheck = useCallback(async (url: string) => {
+    if (!url || !url.trim()) {
+      return;
+    }
+
+    setIsCheckingHealth(true);
+    setHealthCheckError(undefined);
+
+    // Update status to checking
+    const checkingProperties = {
+      ...customProperties,
+      serviceUrl: url.trim(),
+      healthStatus: 'checking' as HealthStatus,
+      healthError: ''
+    };
+    onModelItemUpdated({ customProperties: checkingProperties });
+
+    // Clear cache for this URL to force fresh check
+    clearHealthCheckCache(url.trim());
+
+    try {
+      const result = await checkServiceHealth(url.trim());
+      
+      const updatedProperties = {
+        ...customProperties,
+        serviceUrl: url.trim(),
+        healthStatus: result.status,
+        healthLastChecked: result.timestamp,
+        healthError: result.error || ''
+      };
+      
+      onModelItemUpdated({ customProperties: updatedProperties });
+      
+      if (result.error) {
+        setHealthCheckError(result.error);
+      }
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      const updatedProperties = {
+        ...customProperties,
+        serviceUrl: url.trim(),
+        healthStatus: 'unhealthy' as HealthStatus,
+        healthLastChecked: new Date().toISOString(),
+        healthError: errorMessage
+      };
+      
+      onModelItemUpdated({ customProperties: updatedProperties });
+      setHealthCheckError(errorMessage);
+    } finally {
+      setIsCheckingHealth(false);
+    }
+  }, [customProperties, onModelItemUpdated]);
+
+  const handleServiceUrlChange = useCallback((newUrl: string) => {
+    let updatedProperties: Record<string, string>;
+    
+    if (!newUrl.trim()) {
+      // Remove health status if URL is cleared
+      const { serviceUrl, healthStatus, healthLastChecked, healthError, ...rest } = customProperties;
+      updatedProperties = rest;
+    } else {
+      updatedProperties = {
+        ...customProperties,
+        serviceUrl: newUrl.trim()
+      };
+    }
+    
+    onModelItemUpdated({ customProperties: updatedProperties });
+    
+    // Auto-trigger health check if URL is provided
+    if (newUrl.trim()) {
+      // Debounce the health check
+      const timeoutId = setTimeout(() => {
+        performHealthCheck(newUrl.trim());
+      }, 1000);
+      
+      return () => clearTimeout(timeoutId);
+    }
+  }, [customProperties, onModelItemUpdated, performHealthCheck]);
+
+  const handleManualHealthCheck = useCallback(() => {
+    if (serviceUrl) {
+      performHealthCheck(serviceUrl);
+    }
+  }, [serviceUrl, performHealthCheck]);
+
+  // Auto-check health when component mounts if URL exists
+  useEffect(() => {
+    if (serviceUrl && healthStatus === 'unknown') {
+      performHealthCheck(serviceUrl);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only run on mount
+
   if (!modelItem) {
     return null;
   }
@@ -209,9 +315,72 @@ export const NodeSettings = ({
           </Stack>
         </Stack>
       </Section>
+      <Section title="Service Health Check">
+        <Stack spacing={1.5}>
+          <TextField
+            size="small"
+            label="Service URL"
+            placeholder="https://example.com or example.com"
+            value={serviceUrl}
+            onChange={(e) => handleServiceUrlChange(e.target.value)}
+            helperText="Enter the base URL of the service to monitor"
+            fullWidth
+          />
+          
+          {serviceUrl && (
+            <>
+              <Stack direction="row" spacing={1} alignItems="center">
+                <Box
+                  sx={{
+                    width: 12,
+                    height: 12,
+                    borderRadius: '50%',
+                    bgcolor:
+                      healthStatus === 'healthy'
+                        ? 'success.main'
+                        : healthStatus === 'unhealthy'
+                        ? 'error.main'
+                        : healthStatus === 'checking'
+                        ? 'warning.main'
+                        : 'grey.400',
+                    flexShrink: 0
+                  }}
+                />
+                <Typography variant="body2" sx={{ flex: 1 }}>
+                  Status: {healthStatus === 'healthy' ? 'Healthy' : healthStatus === 'unhealthy' ? 'Unhealthy' : healthStatus === 'checking' ? 'Checking...' : 'Unknown'}
+                </Typography>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={isCheckingHealth ? <CircularProgress size={14} /> : <RefreshIcon />}
+                  onClick={handleManualHealthCheck}
+                  disabled={isCheckingHealth || !serviceUrl.trim()}
+                >
+                  Check Now
+                </Button>
+              </Stack>
+              
+              {healthLastChecked && (
+                <Typography variant="caption" color="text.secondary">
+                  Last checked: {new Date(healthLastChecked).toLocaleString()}
+                </Typography>
+              )}
+              
+              {(healthError || healthCheckError) && (
+                <Alert severity="error">
+                  {healthError || healthCheckError}
+                </Alert>
+              )}
+            </>
+          )}
+        </Stack>
+      </Section>
+      
       <Section title="Custom Properties">
         <Stack spacing={1}>
-          {Object.entries(customProperties).map(([key, value]) => (
+          {Object.entries(customProperties)
+            .filter(([key]) => !['serviceUrl', 'healthStatus', 'healthLastChecked', 'healthError'].includes(key))
+            .map(([key, value]) => (
             <Stack key={key} direction="row" spacing={1} alignItems="center">
               <TextField
                 size="small"
