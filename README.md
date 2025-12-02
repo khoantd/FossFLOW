@@ -31,10 +31,23 @@ FossFLOW is a powerful, open-source Progressive Web App (PWA) for creating beaut
 - **📝 [FOSSFLOW_TODO.md](https://github.com/stan-smith/FossFLOW/blob/master/FOSSFLOW_TODO.md)** - Current issues and roadmap with codebase mappings, most gripes are with the isoflow library itself.
 - **🤝 [CONTRIBUTORS.md](https://github.com/stan-smith/FossFLOW/blob/master/CONTRIBUTORS.md)** - How to contribute to the project.
 
-## Recent Updates (October 2025)
+## Recent Updates (November 2025)
 
-### Performance updates
- - **Reduced frame refresh delay, should look much smoother now**
+### Version 1.7.0 Features
+- **Read-Only Mode** - View diagrams in read-only mode via `/display/{diagram-id}` URL. Perfect for sharing diagrams without editing capabilities. All editing tools are disabled, but zoom and pan remain available for exploration.
+- **Enhanced Color Picker** - Improved custom color picker with better UX and documentation updates
+
+### Version 1.6.0 Features
+- **Variable DPI Image Export** - Export diagrams at multiple resolutions (1x, 2x, 3x, 4x) for print-quality outputs. Choose from preset DPI options (72, 144, 216, 288 DPI) or set custom scale values.
+
+### Version 1.5.2 Features
+- **Keyboard Shortcuts** - Quick save and load with `CTRL+S` (save) and `CTRL+O` (load/open) keyboard shortcuts
+
+### Version 1.5.1 Features
+- **Lazy Icon Loading** - Faster initial load times! By default, only core Isoflow icons are loaded. Users can selectively enable additional icon packs as needed, significantly reducing startup time.
+
+### Performance Updates
+- **Reduced frame refresh delay** - Smoother rendering and interactions
 
 ### Multilingual Support
 - **8 Languages Supported** - Full interface translation in English, Chinese (Simplified), Spanish, Portuguese (Brazilian), French, Hindi, Bengali, and Russian
@@ -85,6 +98,7 @@ FossFLOW is a powerful, open-source Progressive Web App (PWA) for creating beaut
 - Fixed Quill editor toolbar icons display issue
 - Resolved React key warnings in context menus
 - Improved markdown editor styling
+- Added error boundary for React-Quill DOM manipulation errors
 
 ## Features
 
@@ -92,11 +106,14 @@ FossFLOW is a powerful, open-source Progressive Web App (PWA) for creating beaut
 - 💾 **Auto-Save** - Your work is automatically saved every 5 seconds
 - 📱 **PWA Support** - Install as a native app on Mac and Linux
 - 🔒 **Privacy-First** - All data stored locally in your browser
-- 📤 **Import/Export** - Share diagrams as JSON files
+- 📤 **Import/Export** - Share diagrams as JSON files or high-resolution images (variable DPI)
 - 🎯 **Session Storage** - Quick save without dialogs
 - 🌐 **Offline Support** - Work without internet connection
 - 🗄️ **Server Storage** - Optional persistent storage when using Docker (enabled by default)
 - 🌍 **Multilingual** - Full support for 8 languages: English, 简体中文, Español, Português, Français, हिन्दी, বাংলা, Русский
+- 👁️ **Read-Only Mode** - Share diagrams in view-only mode via URL (`/display/{diagram-id}`)
+- ⌨️ **Keyboard Shortcuts** - Quick save (`CTRL+S`) and load (`CTRL+O`) shortcuts
+- 🖼️ **High-Resolution Export** - Export diagrams at multiple DPI settings (72, 144, 216, 288 DPI) for print quality
 
 
 ## 🐳 Quick Deploy with Docker
@@ -182,15 +199,22 @@ npm run publish:lib  # Publish library to npm
    - Switch modes in Settings → Connectors tab
 
 3. **Save Your Work**:
-   - **Quick Save** - Saves to browser session
-   - **Export** - Download as JSON file
-   - **Import** - Load from JSON file
+   - **Quick Save** - Saves to browser session (or use `CTRL+S`)
+   - **Export** - Download as JSON file or high-resolution image
+   - **Import** - Load from JSON file (or use `CTRL+O`)
+   - **Image Export** - Export diagrams at various DPI settings (1x, 2x, 3x, 4x) for print quality
 
 ### Storage Options
 
 - **Session Storage**: Temporary saves cleared when browser closes
 - **Export/Import**: Permanent storage as JSON files
 - **Auto-Save**: Automatically saves changes every 5 seconds to session
+- **Server Storage**: Persistent storage when using Docker deployment
+
+### Sharing Diagrams
+
+- **Read-Only Mode**: Share diagrams in view-only mode by accessing `/display/{diagram-id}` URL. Editing is disabled, but viewers can zoom and pan to explore the diagram.
+- **Export as Image**: Export diagrams as PNG images at various resolutions for presentations, documentation, or printing.
 
 ## Contributing
 
